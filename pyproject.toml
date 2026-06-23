@@ -8,13 +8,12 @@ version = "0.1.0"
 description = "Fast phase-radius fitting and parameter sweep utilities for metalens design."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "phasegrid contributors" }]
 keywords = ["metalens", "metasurface", "phase", "parameter-sweep", "photonics", "fdtd"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
 

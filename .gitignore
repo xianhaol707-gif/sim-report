@@ -1,5 +1,8 @@
 __pycache__/
 *.py[cod]
+*.so
+*.dylib
+*.dll
 .pytest_cache/
 .venv/
 dist/
@@ -8,4 +11,3 @@ build/
 report/
 meep-report/
 fdtd-report/
-

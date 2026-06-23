@@ -26,6 +26,63 @@ PYTHONPATH=src python -m phasegrid design examples/sweep.csv --out /tmp/layout.c
 
 ## Python API
 
+Use the high-level designer when you want the whole workflow in one class:
+
+```python
+from phasegrid import PhaseGridDesigner
+
+designer = PhaseGridDesigner(
+    library="examples/sweep.csv",
+    phase="hyperbolic",
+    aperture_radius=4.0,
+    pitch=0.35,
+    wavelength=0.532,
+    focal_length=12.0,
+    loss="phase_transmission",
+    loss_params={"phase_weight": 1.0, "transmission_weight": 0.25},
+    plot_structure=True,
+    plot_phase=True,
+    plot_propagation=True,
+    backend="auto",
+)
+
+result = designer.run("design")
+print(result.summary)
+print(result.files)
+```
+
+Use a custom phase pattern:
+
+```python
+import math
+from phasegrid import PhaseGridDesigner
+
+def spiral_phase(x, y, params):
+    return params["charge"] * math.atan2(y, x)
+
+designer = PhaseGridDesigner(
+    library="examples/sweep.csv",
+    phase=spiral_phase,
+    phase_params={"charge": 2},
+    aperture_radius=4.0,
+    pitch=0.35,
+    loss="phase_only",
+)
+```
+
+Use a custom loss:
+
+```python
+from phasegrid.library import phase_distance
+
+def my_loss(target_phase, candidate, x, y, params):
+    phase_loss = phase_distance(target_phase, candidate.phase) ** 2
+    transmission_loss = 1 - candidate.transmission
+    return phase_loss + 0.3 * transmission_loss
+```
+
+Lower-level fitting still works:
+
 ```python
 from pathlib import Path
 
@@ -48,6 +105,8 @@ layout = fit.design_lens(
 layout.to_csv("metalens_layout.csv")
 fit.to_svg("phase_fit.svg")
 ```
+
+The built-in `phase_only` and `phase_transmission` losses use the optional C++ selector when the extension is available. If it is not compiled, `backend="auto"` falls back to pure Python.
 
 Generate a parameter sweep:
 
