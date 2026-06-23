@@ -136,6 +136,62 @@ print(result.best.name, result.best.score)
 
 This writes a ranked `leaderboard.csv` plus one folder per design.
 
+Run the full pipeline: generate a unit-cell library, call a solver, search layouts, and rank them:
+
+```python
+from phasegrid import PhaseGridPipeline, linspace
+
+pipeline = PhaseGridPipeline(
+    library_sweep={
+        "radius_um": linspace(0.05, 0.16, 24),
+        "height_um": [0.6, 0.7],
+        "period_um": [0.35],
+        "wavelength_um": [0.532],
+    },
+    solver="mock",  # mock is dependency-free; replace with a custom RCWA/FDTD runner
+    design_sweep={
+        "phase": ["hyperbolic", "parabolic", "vortex"],
+        "loss": ["phase_only", "phase_transmission"],
+        "pitch": [0.30, 0.35, 0.40],
+        "aperture_radius": [4.0],
+        "focal_length": [8.0, 12.0],
+    },
+    fixed={"wavelength": 0.532},
+)
+
+result = pipeline.run("pipeline_out")
+print(result.library_path)
+print(result.search_result.best.name)
+```
+
+Use your own RCWA/FDTD code as the library solver:
+
+```python
+from phasegrid import PhaseGridPipeline
+
+def run_unit_cell(job, out_dir, config):
+    # job.params contains radius_um, height_um, period_um, wavelength_um, ...
+    # Call Meep, S4, grcwa, Lumerical, or your own script here.
+    return {
+        "phase_rad": 1.23,
+        "transmission": 0.82,
+        "radius_um": job.params["radius_um"],
+    }
+
+pipeline = PhaseGridPipeline(
+    library_sweep={"radius_um": [0.05, 0.06, 0.07]},
+    solver_runner=run_unit_cell,
+    design_sweep={
+        "phase": ["hyperbolic"],
+        "loss": ["phase_transmission"],
+        "pitch": [0.35],
+        "aperture_radius": [4.0],
+        "focal_length": [12.0],
+    },
+    fixed={"wavelength": 0.532},
+)
+```
+
 Attach your own FDTD runner when you want the design step to launch a near-field or propagation simulation:
 
 ```python
@@ -220,6 +276,22 @@ phasegrid compare examples/sweep.csv \
   --wavelength 0.532 \
   --focal-length 8,12 \
   --out search_out
+```
+
+Run a dependency-free full pipeline demo:
+
+```bash
+phasegrid pipeline-demo --out pipeline_out
+```
+
+Pipeline output:
+
+```text
+pipeline_out/
+  library_jobs/
+  library_results/library.csv
+  search/leaderboard.csv
+  pipeline_summary.json
 ```
 
 ## Input Sweep Format

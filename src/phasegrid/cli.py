@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from .fit import PhaseFit
+from .pipeline import PhaseGridPipeline
 from .search import PhaseGridSearch
 from .sweep import Sweep, parse_values
 from .svg import write_layout_svg
@@ -50,6 +51,18 @@ def main() -> int:
     compare_parser.add_argument("--plot-best", action=argparse.BooleanOptionalAction, default=True)
     compare_parser.add_argument("--plot-propagation", action=argparse.BooleanOptionalAction, default=False)
 
+    pipeline_parser = subparsers.add_parser("pipeline-demo", help="Run a full mock library-generation and design-search pipeline.")
+    pipeline_parser.add_argument("--radius", default="0.05:0.16:0.01")
+    pipeline_parser.add_argument("--height", default="0.6,0.7")
+    pipeline_parser.add_argument("--period", default="0.35")
+    pipeline_parser.add_argument("--wavelength", default="0.532")
+    pipeline_parser.add_argument("--phase", default="hyperbolic,parabolic")
+    pipeline_parser.add_argument("--loss", default="phase_only,phase_transmission")
+    pipeline_parser.add_argument("--pitch", default="0.3,0.35")
+    pipeline_parser.add_argument("--aperture-radius", default="1.0")
+    pipeline_parser.add_argument("--focal-length", default="8,12")
+    pipeline_parser.add_argument("--out", type=Path, default=Path("phasegrid_pipeline"))
+
     args = parser.parse_args()
     if args.mode == "sweep":
         sweep = Sweep(radius_um=parse_values(args.radius), height_um=parse_values(args.height), wavelength_um=parse_values(args.wavelength))
@@ -92,6 +105,30 @@ def main() -> int:
         print(f"Wrote {len(result.runs)} run(s) to {args.out}")
         print(f"Leaderboard: {result.leaderboard_path}")
         print(f"Best: {result.best.name} score={result.best.score:.6g}")
+        return 0
+    if args.mode == "pipeline-demo":
+        pipeline = PhaseGridPipeline(
+            library_sweep={
+                "radius_um": parse_values(args.radius),
+                "height_um": parse_values(args.height),
+                "period_um": parse_values(args.period),
+                "wavelength_um": parse_values(args.wavelength),
+            },
+            solver="mock",
+            design_sweep={
+                "phase": parse_strings(args.phase),
+                "loss": parse_strings(args.loss),
+                "pitch": parse_values(args.pitch),
+                "aperture_radius": parse_values(args.aperture_radius),
+                "focal_length": parse_values(args.focal_length),
+            },
+            fixed={"wavelength": float(parse_values(args.wavelength)[0]), "plot_propagation": False},
+            out_dir=args.out,
+        )
+        result = pipeline.run()
+        print(f"Library: {result.library_path}")
+        print(f"Leaderboard: {result.search_result.leaderboard_path}")
+        print(f"Best: {result.search_result.best.name} score={result.search_result.best.score:.6g}")
         return 0
     parser.print_help()
     return 2
