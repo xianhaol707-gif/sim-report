@@ -10,12 +10,12 @@ def plot_structure(path: str | Path, sites: list[Any], aperture_radius: float) -
     width = height = 760
     scale = (width * 0.43) / aperture_radius
     cx = cy = width / 2
-    max_radius = max((site.candidate.radius for site in sites), default=1.0)
+    max_radius = max((draw_size(site.candidate) for site in sites), default=1.0)
     circles = []
     for site in sites[:8000]:
         x = cx + site.x * scale
         y = cy - site.y * scale
-        r = max(1.2, site.candidate.radius / max_radius * 5.0)
+        r = max(1.2, draw_size(site.candidate) / max_radius * 5.0)
         circles.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{r:.2f}" />')
     return write_svg(path, width, height, "structure", "".join(circles), circle_style="#0f766e")
 
@@ -109,3 +109,8 @@ def hsl_to_hex(h: float, s: float, l: float) -> str:
         return l - a * max(-1, min(k - 3, 9 - k, 1))
 
     return "#{:02x}{:02x}{:02x}".format(int(f(0) * 255), int(f(8) * 255), int(f(4) * 255))
+
+
+def draw_size(candidate: Any) -> float:
+    values = [candidate.radius, candidate.width, candidate.length]
+    return max((float(value) for value in values if value is not None), default=1.0)

@@ -6,8 +6,9 @@ Fast phase-radius fitting plus parameter sweep utilities for metalens and metasu
 
 1. Generate parameter sweep jobs for nanopillar/unit-cell simulations.
 2. Read the completed sweep table.
-3. Fit the radius-to-phase lookup curve.
-4. Convert a target metalens phase profile into a fabrication/simulation layout.
+3. Build a meta-atom library with phase/transmission channels.
+4. Select the best candidate at each lens site with a configurable loss.
+5. Optionally use PB/geometric phase by optimizing the rotation angle.
 
 It uses only the Python standard library, so it works on laptops, clusters, and minimal remote nodes.
 
@@ -81,7 +82,65 @@ def my_loss(target_phase, candidate, x, y, params):
     return phase_loss + 0.3 * transmission_loss
 ```
 
-Lower-level fitting still works:
+Dual-band design selects candidates by loss across multiple channels instead of relying on a single fitted curve:
+
+```python
+from phasegrid import PhaseGridDesigner
+
+designer = PhaseGridDesigner(
+    library="examples/dualband_pb.csv",
+    channels=[
+        {
+            "name": "532",
+            "phase_col": "phase_532",
+            "transmission_col": "T_532",
+            "phase": "hyperbolic",
+            "phase_params": {"wavelength": 0.532, "focal_length": 12.0},
+            "weight": 1.0,
+        },
+        {
+            "name": "633",
+            "phase_col": "phase_633",
+            "transmission_col": "T_633",
+            "phase": "hyperbolic",
+            "phase_params": {"wavelength": 0.633, "focal_length": 14.0},
+            "weight": 1.0,
+        },
+    ],
+    loss="dualband",
+    phase_mode="dynamic",
+    aperture_radius=4.0,
+    pitch=0.35,
+)
+
+designer.run("dualband_design")
+```
+
+PB phase mode searches over rotation angles and writes `rotation_rad` / `rotation_deg` into the layout:
+
+```python
+from phasegrid import Channel, PhaseGridDesigner
+
+designer = PhaseGridDesigner(
+    library="examples/dualband_pb.csv",
+    channels=[
+        Channel(
+            name="532",
+            phase_col="phase_532",
+            transmission_col="T_532",
+            phase="hyperbolic",
+            phase_params={"wavelength": 0.532, "focal_length": 12.0},
+        )
+    ],
+    loss="pb_phase",
+    phase_mode="pb",      # dynamic / pb / hybrid
+    rotation_steps=180,
+    aperture_radius=4.0,
+    pitch=0.35,
+)
+```
+
+Lower-level curve fitting still works for simple single-band radius sweeps:
 
 ```python
 from pathlib import Path
@@ -106,7 +165,7 @@ layout.to_csv("metalens_layout.csv")
 fit.to_svg("phase_fit.svg")
 ```
 
-The built-in `phase_only` and `phase_transmission` losses use the optional C++ selector when the extension is available. If it is not compiled, `backend="auto"` falls back to pure Python.
+The built-in `phase_only` and `phase_transmission` losses use the optional C++ selector for simple single-channel selection when the extension is available. Multichannel and PB selection use the general Python loss engine.
 
 Compare many phase/loss/geometry settings:
 
@@ -307,12 +366,20 @@ radius_um,phase_rad,transmission
 
 Phase values can be wrapped or unwrapped. `phasegrid` unwraps and normalizes the curve internally.
 
-## Output Layout Format
-
-`design_lens` writes one row per lattice site:
+For shape-aware, multichannel, or PB workflows, include any columns your loss needs:
 
 ```csv
-x_um,y_um,r_um,target_phase_rad,fit_phase_rad,phase_error_rad,transmission
+shape,radius_um,width_um,length_um,height_um,phase_532,T_532,phase_633,T_633
+rect,0.00,0.08,0.18,0.60,0.10,0.82,0.24,0.78
+rect,0.00,0.10,0.20,0.60,1.20,0.86,1.05,0.80
+```
+
+## Output Layout Format
+
+Layouts write one row per lattice site:
+
+```csv
+x_um,y_um,shape,r_um,width_um,length_um,height_um,rotation_rad,rotation_deg,target_phase_rad,phase_rad,phase_error_rad,transmission,loss
 ```
 
 The result can feed a Meep/Lumerical script, a GDS pipeline, or a quick design sanity check.

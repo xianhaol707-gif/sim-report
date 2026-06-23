@@ -1,5 +1,6 @@
 """Phase-radius fitting and parameter sweep helpers for metalens design."""
 
+from .channels import Channel
 from .designer import DesignResult, DesignSite, PhaseGridDesigner
 from .fit import PhaseFit, PhaseSample
 from .library import PillarCandidate, PillarLibrary
@@ -29,6 +30,7 @@ __all__ = [
     "SearchRun",
     "Sweep",
     "CustomSolver",
+    "Channel",
     "MockSolver",
     "__version__",
     "arange",

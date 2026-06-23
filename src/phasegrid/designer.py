@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Callable, Any
 
 from .backend import select_indices
+from .channels import Channel, normalize_channels
 from .fit import TAU, wrap_phase
-from .library import PillarCandidate, PillarLibrary
+from .library import PillarCandidate, PillarLibrary, phase_distance
 from .losses import LossCallable, resolve_loss
 from .patterns import PhaseCallable, resolve_phase
 from .plots import plot_phase, plot_propagation, plot_structure
@@ -22,6 +23,8 @@ class DesignSite:
     target_phase: float
     candidate: PillarCandidate
     loss: float
+    channel_targets: dict[str, float] | None = None
+    channel_errors: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -34,20 +37,50 @@ class DesignResult:
         path = Path(path)
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["x_um", "y_um", "r_um", "height_um", "target_phase_rad", "phase_rad", "phase_error_rad", "transmission", "loss"])
+            extra_channels = sorted({key for site in self.sites for key in (site.channel_targets or {})})
+            writer.writerow(
+                [
+                    "x_um",
+                    "y_um",
+                    "shape",
+                    "r_um",
+                    "width_um",
+                    "length_um",
+                    "height_um",
+                    "rotation_rad",
+                    "rotation_deg",
+                    "target_phase_rad",
+                    "phase_rad",
+                    "phase_error_rad",
+                    "transmission",
+                    "loss",
+                ]
+                + [f"target_phase_{name}" for name in extra_channels]
+                + [f"phase_error_{name}" for name in extra_channels]
+            )
             for site in self.sites:
+                rotation = site.candidate.rotation
+                targets = site.channel_targets or {}
+                errors = site.channel_errors or {}
                 writer.writerow(
                     [
                         site.x,
                         site.y,
+                        site.candidate.shape,
                         site.candidate.radius,
+                        "" if site.candidate.width is None else site.candidate.width,
+                        "" if site.candidate.length is None else site.candidate.length,
                         "" if site.candidate.height is None else site.candidate.height,
+                        "" if rotation is None else rotation,
+                        "" if rotation is None else math.degrees(rotation),
                         site.target_phase,
                         site.candidate.phase,
                         wrap_phase(site.candidate.phase - site.target_phase),
                         site.candidate.transmission,
                         site.loss,
                     ]
+                    + [targets.get(name, "") for name in extra_channels]
+                    + [errors.get(name, "") for name in extra_channels]
                 )
         return path
 
@@ -64,6 +97,10 @@ class PhaseGridDesigner:
         wavelength: float | None = None,
         focal_length: float | None = None,
         phase_params: dict[str, float] | None = None,
+        channels: list[dict[str, Any] | Channel] | None = None,
+        phase_mode: str = "dynamic",
+        rotation_steps: int = 180,
+        pb_spin: int = 1,
         loss_params: dict[str, float] | None = None,
         out_dir: str | Path = "phasegrid_design",
         plot_structure: bool = True,
@@ -89,6 +126,10 @@ class PhaseGridDesigner:
             self.phase_params.setdefault("focal_length", focal_length)
         self.loss_params = {"phase_weight": 1.0, "transmission_weight": 0.2}
         self.loss_params.update(loss_params or {})
+        self.channels = normalize_channels(channels, self.phase, self.phase_params)
+        self.phase_mode = phase_mode
+        self.rotation_steps = rotation_steps
+        self.pb_spin = pb_spin
         self.out_dir = Path(out_dir)
         self.should_plot_structure = plot_structure
         self.should_plot_phase = plot_phase
@@ -104,11 +145,14 @@ class PhaseGridDesigner:
         out_dir = Path(out_dir) if out_dir else self.out_dir
         out_dir.mkdir(parents=True, exist_ok=True)
         coordinates = make_grid(self.aperture_radius, self.pitch, self.shape)
-        phase_fn = resolve_phase(self.phase)
-        targets = [phase_fn(x, y, self.phase_params) % TAU for x, y in coordinates]
-        loss_fn = resolve_loss(self.loss)
 
-        sites = self._select_sites(coordinates, targets, loss_fn)
+        if self._uses_multichannel_selector():
+            sites = self._select_multichannel_sites(coordinates)
+        else:
+            phase_fn = resolve_phase(self.phase)
+            targets = [phase_fn(x, y, self.phase_params) % TAU for x, y in coordinates]
+            loss_fn = resolve_loss(self.loss)
+            sites = self._select_sites(coordinates, targets, loss_fn)
         result = DesignResult(sites=sites, files={}, summary=self._summary(sites))
 
         layout_path = result.to_csv(out_dir / "layout.csv")
@@ -165,7 +209,15 @@ class PhaseGridDesigner:
         return sites
 
     def _summary(self, sites: list[DesignSite]) -> dict[str, float | int | str]:
-        mean_abs_error = sum(abs(wrap_phase(site.candidate.phase - site.target_phase)) for site in sites) / len(sites) if sites else 0.0
+        if sites and any(site.channel_errors for site in sites):
+            error_values = [
+                abs(error)
+                for site in sites
+                for error in (site.channel_errors or {}).values()
+            ]
+            mean_abs_error = sum(error_values) / len(error_values) if error_values else 0.0
+        else:
+            mean_abs_error = sum(abs(wrap_phase(site.candidate.phase - site.target_phase)) for site in sites) / len(sites) if sites else 0.0
         mean_transmission = sum(site.candidate.transmission for site in sites) / len(sites) if sites else 0.0
         return {
             "sites": len(sites),
@@ -174,10 +226,74 @@ class PhaseGridDesigner:
             "shape": self.shape,
             "phase": self.phase if isinstance(self.phase, str) else "custom",
             "loss": self.loss if isinstance(self.loss, str) else "custom",
+            "phase_mode": self.phase_mode,
+            "channels": len(self.channels),
             "mean_abs_phase_error_rad": mean_abs_error,
             "mean_transmission": mean_transmission,
             "backend": self.backend,
         }
+
+    def _uses_multichannel_selector(self) -> bool:
+        return len(self.channels) > 1 or self.phase_mode in {"pb", "hybrid"} or str(self.loss).lower() in {"dualband", "multiband", "pb", "pb_phase", "pb_dualband", "pb_multiband"}
+
+    def _select_multichannel_sites(self, coordinates: list[tuple[float, float]]) -> list[DesignSite]:
+        channel_phase_fns = [(channel, resolve_phase(channel.phase)) for channel in self.channels]
+        rotations = rotation_grid(self.rotation_steps) if self.phase_mode in {"pb", "hybrid"} else [None]
+        sites: list[DesignSite] = []
+        for x, y in coordinates:
+            targets = {
+                channel.name: phase_fn(x, y, dict(channel.phase_params or {})) % TAU
+                for channel, phase_fn in channel_phase_fns
+            }
+            best_candidate = self.library.candidates[0]
+            best_loss = float("inf")
+            best_errors: dict[str, float] = {}
+            for candidate in self.library.candidates:
+                for rotation in rotations:
+                    loss, errors = self._candidate_multichannel_loss(targets, candidate, rotation)
+                    if loss < best_loss:
+                        best_loss = loss
+                        best_candidate = candidate.with_rotation(rotation)
+                        best_errors = errors
+            default_target = targets[self.channels[0].name]
+            sites.append(
+                DesignSite(
+                    x=x,
+                    y=y,
+                    target_phase=default_target,
+                    candidate=best_candidate,
+                    loss=best_loss,
+                    channel_targets=targets,
+                    channel_errors=best_errors,
+                )
+            )
+        return sites
+
+    def _candidate_multichannel_loss(
+        self,
+        targets: dict[str, float],
+        candidate: PillarCandidate,
+        rotation: float | None,
+    ) -> tuple[float, dict[str, float]]:
+        total = 0.0
+        errors: dict[str, float] = {}
+        phase_weight = self.loss_params.get("phase_weight", 1.0)
+        for channel in self.channels:
+            dynamic_phase = candidate.phase_for(channel.phase_col)
+            pb_phase = 0.0 if rotation is None else 2.0 * channel.pb_spin * self.pb_spin * rotation
+            if self.phase_mode == "pb":
+                realized = pb_phase
+            elif self.phase_mode == "hybrid":
+                realized = dynamic_phase + pb_phase
+            else:
+                realized = dynamic_phase
+            error = phase_distance(targets[channel.name], realized)
+            transmission = candidate.transmission_for(channel.transmission_col)
+            transmission_loss = 1.0 - transmission
+            total += channel.weight * phase_weight * error * error
+            total += channel.transmission_weight * transmission_loss * transmission_loss
+            errors[channel.name] = error
+        return total, errors
 
 
 def make_grid(aperture_radius: float, pitch: float, shape: str) -> list[tuple[float, float]]:
@@ -200,3 +316,9 @@ def make_grid(aperture_radius: float, pitch: float, shape: str) -> list[tuple[fl
 def write_fdtd_summary(path: Path, output: dict[str, Any]) -> Path:
     path.write_text(json.dumps(output, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
     return path
+
+
+def rotation_grid(steps: int) -> list[float]:
+    if steps <= 0:
+        raise ValueError("rotation_steps must be positive")
+    return [index * math.pi / steps for index in range(steps)]

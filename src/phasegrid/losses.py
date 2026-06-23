@@ -16,6 +16,12 @@ def resolve_loss(loss: str | LossCallable) -> LossCallable:
         "phase_transmission": phase_transmission,
         "balanced": phase_transmission,
         "high_transmission": high_transmission,
+        "dualband": phase_transmission,
+        "multiband": phase_transmission,
+        "pb": phase_transmission,
+        "pb_phase": phase_transmission,
+        "pb_dualband": phase_transmission,
+        "pb_multiband": phase_transmission,
     }
     try:
         return losses[loss.lower()]
@@ -43,4 +49,3 @@ def high_transmission(target_phase: float, candidate: PillarCandidate, x: float,
     error = phase_distance(target_phase, candidate.phase)
     transmission_loss = 1.0 - candidate.transmission
     return phase_weight * error * error + transmission_weight * transmission_loss * transmission_loss
-

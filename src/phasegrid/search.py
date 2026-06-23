@@ -81,6 +81,10 @@ class PhaseGridSearch:
                 wavelength=pop_optional_float(merged, "wavelength"),
                 focal_length=pop_optional_float(merged, "focal_length"),
                 phase_params=dict(merged.pop("phase_params", {})),
+                channels=merged.pop("channels", None),
+                phase_mode=str(merged.pop("phase_mode", "dynamic")),
+                rotation_steps=int(merged.pop("rotation_steps", 180)),
+                pb_spin=int(merged.pop("pb_spin", 1)),
                 loss_params=dict(merged.pop("loss_params", {})),
                 out_dir=run_dir,
                 plot_structure=bool(merged.pop("plot_structure", plot_enabled)),
@@ -113,6 +117,10 @@ class PhaseGridSearch:
                     wavelength=as_optional_float(merged.get("wavelength")),
                     focal_length=as_optional_float(merged.get("focal_length")),
                     phase_params=dict(merged.get("phase_params", {})),
+                    channels=merged.get("channels", None),
+                    phase_mode=str(merged.get("phase_mode", "dynamic")),
+                    rotation_steps=int(merged.get("rotation_steps", 180)),
+                    pb_spin=int(merged.get("pb_spin", 1)),
                     loss_params=dict(merged.get("loss_params", {})),
                     out_dir=best.out_dir,
                     plot_structure=True,
@@ -159,4 +167,3 @@ def pop_optional_float(values: dict[str, Any], key: str) -> float | None:
 
 def as_optional_float(value: Any) -> float | None:
     return None if value is None else float(value)
-
