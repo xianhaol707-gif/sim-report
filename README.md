@@ -1,112 +1,121 @@
-# meep-report
+# phasegrid
 
-Generate a clean Markdown report from Meep/FDTD simulation results.
+Fast phase-radius fitting plus parameter sweep utilities for metalens and metasurface design.
 
-`meep-report` is designed for photonics and metalens workflows where every run leaves behind a mix of parameters, CSV metrics, field images, HDF5 files, and logs. It turns that folder into a readable report with figures, tables, and reproducibility notes.
+`phasegrid` is a small Python package for a common workflow:
 
-## What It Creates
+1. Generate parameter sweep jobs for nanopillar/unit-cell simulations.
+2. Read the completed sweep table.
+3. Fit the radius-to-phase lookup curve.
+4. Convert a target metalens phase profile into a fabrication/simulation layout.
 
-```text
-report/
-  summary.md
-  parameters.csv
-  metrics.csv
-  datasets.csv
-  charts/
-    metrics_transmission.svg
-  figures/
-    focal_intensity.png
-```
+It uses only the Python standard library, so it works on laptops, clusters, and minimal remote nodes.
 
-## Quick Start
+## Install
 
 ```bash
 python -m pip install --no-build-isolation .
-meep-report path/to/results --out report --title "TiO2 dual metalens"
 ```
 
 For local development:
 
 ```bash
-PYTHONPATH=src python -m meep_report examples/basic/results --out examples/basic/report
-```
-
-## Supported Inputs
-
-- `*.json`, `*.yaml`, `*.yml`: flattened into `parameters.csv`.
-- `*.py`, `*.ctl`: simple scalar assignments are extracted as run parameters.
-- `*.csv`, `*.tsv`, `*.dat`: numeric columns are collected into `metrics.csv` and plotted as SVG charts.
-- `*.png`, `*.jpg`, `*.jpeg`, `*.svg`, `*.tif`, `*.tiff`: copied into `figures/` and embedded in `summary.md`.
-- `*.h5`, `*.hdf5`: summarized in `datasets.csv` when `h5py` is installed; otherwise listed as HDF5 assets.
-- `*.log`, `*.out`, `*.err`, `*.txt`: scanned for common warnings, errors, and completion hints.
-
-## CLI
-
-```bash
-meep-report RESULTS_DIR --out report
-```
-
-Options:
-
-```text
---title TEXT           Report title.
---max-charts N         Maximum generated SVG charts. Default: 60.
---max-figures N        Maximum embedded figure previews. Default: 30.
---copy-figures / --no-copy-figures
---strict               Fail when the input folder has no recognizable result files.
+PYTHONPATH=src python -m phasegrid design examples/sweep.csv --out /tmp/layout.csv \
+  --wavelength 0.532 --focal-length 12 --aperture 8 --pitch 0.35
 ```
 
 ## Python API
 
-Use it inside your own simulation workflow:
-
 ```python
 from pathlib import Path
 
-from meep_report import ReportOptions, build_report
+from phasegrid import PhaseFit
 
-result = build_report(
-    results_dir=Path("results/tio2_run_001"),
-    output_dir=Path("reports/tio2_run_001"),
-    options=ReportOptions(title="TiO2 run 001"),
+fit = PhaseFit.from_csv(
+    "examples/sweep.csv",
+    radius="radius_um",
+    phase="phase_rad",
+    transmission="transmission",
 )
 
-print(result.summary_path)
-print(result.chart_paths)
+layout = fit.design_lens(
+    wavelength=0.532,
+    focal_length=12.0,
+    aperture=8.0,
+    pitch=0.35,
+)
+
+layout.to_csv("metalens_layout.csv")
+fit.to_svg("phase_fit.svg")
 ```
 
-For batch reporting:
+Generate a parameter sweep:
 
 ```python
-from pathlib import Path
+from phasegrid import Sweep
 
-from meep_report import ReportOptions, build_report
+sweep = Sweep(
+    radius_um=[0.05, 0.06, 0.07, 0.08],
+    height_um=[0.6, 0.7],
+    wavelength_um=[0.532],
+)
 
-for results_dir in Path("results").iterdir():
-    if results_dir.is_dir():
-        build_report(
-            results_dir=results_dir,
-            output_dir=Path("reports") / results_dir.name,
-            options=ReportOptions(title=f"{results_dir.name} report"),
-        )
+sweep.write("jobs")
 ```
 
-## Why This Exists
+This creates:
 
-Meep/FDTD runs are easy to generate and hard to review later. This tool focuses on the boring but important parts:
+```text
+jobs/
+  manifest.csv
+  job_0000/params.json
+  job_0001/params.json
+```
 
-- Which parameters produced this run?
-- What figures and field plots came out?
-- Which CSV metrics changed?
-- Did logs contain warnings or failures?
-- Which HDF5 datasets were produced?
+## CLI
 
-The output is plain Markdown plus CSV and SVG files, so it works on GitHub, clusters, and lab notebooks without a database server.
-
-## Example
+Fit a sweep table:
 
 ```bash
-PYTHONPATH=src python -m meep_report examples/basic/results --out /tmp/meep-report-demo
+phasegrid fit examples/sweep.csv --out phase_fit.svg
 ```
 
-Open `/tmp/meep-report-demo/summary.md` to inspect the generated report.
+Design a metalens layout:
+
+```bash
+phasegrid design examples/sweep.csv \
+  --wavelength 0.532 \
+  --focal-length 12 \
+  --aperture 8 \
+  --pitch 0.35 \
+  --out metalens_layout.csv
+```
+
+Generate sweep jobs:
+
+```bash
+phasegrid sweep --radius 0.05:0.12:0.01 --height 0.6,0.7 --wavelength 0.532 --out jobs
+```
+
+## Input Sweep Format
+
+At minimum, provide radius and phase columns:
+
+```csv
+radius_um,phase_rad,transmission
+0.05,0.10,0.42
+0.06,0.62,0.58
+0.07,1.31,0.71
+```
+
+Phase values can be wrapped or unwrapped. `phasegrid` unwraps and normalizes the curve internally.
+
+## Output Layout Format
+
+`design_lens` writes one row per lattice site:
+
+```csv
+x_um,y_um,r_um,target_phase_rad,fit_phase_rad,phase_error_rad,transmission
+```
+
+The result can feed a Meep/Lumerical script, a GDS pipeline, or a quick design sanity check.

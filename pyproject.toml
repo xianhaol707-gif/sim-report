@@ -3,14 +3,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "meep-report"
-version = "0.2.0"
-description = "Generate Markdown reports, figures, and parameter tables from Meep/FDTD simulation results."
+name = "phasegrid"
+version = "0.1.0"
+description = "Fast phase-radius fitting and parameter sweep utilities for metalens design."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "meep-report contributors" }]
-keywords = ["meep", "fdtd", "photonics", "metalens", "simulation", "report"]
+authors = [{ name = "phasegrid contributors" }]
+keywords = ["metalens", "metasurface", "phase", "parameter-sweep", "photonics", "fdtd"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
@@ -19,15 +19,10 @@ classifiers = [
 ]
 
 [project.scripts]
-meep-report = "meep_report.cli:main"
-fdtd-report = "meep_report.cli:main"
-
-[project.optional-dependencies]
-hdf5 = ["h5py>=3.8"]
+phasegrid = "phasegrid.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-
