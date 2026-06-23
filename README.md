@@ -108,6 +108,59 @@ fit.to_svg("phase_fit.svg")
 
 The built-in `phase_only` and `phase_transmission` losses use the optional C++ selector when the extension is available. If it is not compiled, `backend="auto"` falls back to pure Python.
 
+Compare many phase/loss/geometry settings:
+
+```python
+from phasegrid import PhaseGridSearch
+
+search = PhaseGridSearch(
+    library="examples/sweep.csv",
+    sweep={
+        "phase": ["hyperbolic", "parabolic", "vortex"],
+        "loss": ["phase_only", "phase_transmission", "high_transmission"],
+        "pitch": [0.25, 0.30, 0.35],
+        "aperture_radius": [4.0, 6.0],
+        "focal_length": [8.0, 12.0],
+    },
+    fixed={
+        "wavelength": 0.532,
+        "plot_structure": False,
+        "plot_phase": False,
+        "plot_propagation": False,
+    },
+)
+
+result = search.run("search_out")
+print(result.best.name, result.best.score)
+```
+
+This writes a ranked `leaderboard.csv` plus one folder per design.
+
+Attach your own FDTD runner when you want the design step to launch a near-field or propagation simulation:
+
+```python
+from phasegrid import PhaseGridDesigner
+
+def run_meep(result, out_dir, config):
+    # Write a Meep script, launch it, or call your existing simulation wrapper.
+    # Return any serializable metadata you want recorded in fdtd/summary.json.
+    return {"status": "queued", "mode": config["mode"]}
+
+designer = PhaseGridDesigner(
+    library="examples/sweep.csv",
+    phase="hyperbolic",
+    aperture_radius=4.0,
+    pitch=0.35,
+    wavelength=0.532,
+    focal_length=12.0,
+    run_fdtd=True,
+    fdtd_runner=run_meep,
+    fdtd_config={"mode": "near-field-and-propagation"},
+)
+
+designer.run("design_with_fdtd")
+```
+
 Generate a parameter sweep:
 
 ```python
@@ -154,6 +207,19 @@ Generate sweep jobs:
 
 ```bash
 phasegrid sweep --radius 0.05:0.12:0.01 --height 0.6,0.7 --wavelength 0.532 --out jobs
+```
+
+Compare design settings:
+
+```bash
+phasegrid compare examples/sweep.csv \
+  --phase hyperbolic,parabolic,vortex \
+  --loss phase_only,phase_transmission \
+  --pitch 0.25,0.3,0.35 \
+  --aperture-radius 4,6 \
+  --wavelength 0.532 \
+  --focal-length 8,12 \
+  --out search_out
 ```
 
 ## Input Sweep Format

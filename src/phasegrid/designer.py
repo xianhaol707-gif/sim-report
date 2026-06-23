@@ -5,6 +5,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Any
 
 from .backend import select_indices
 from .fit import TAU, wrap_phase
@@ -70,6 +71,9 @@ class PhaseGridDesigner:
         plot_propagation: bool = True,
         propagation_z: float | None = None,
         propagation_size: int = 72,
+        run_fdtd: bool = False,
+        fdtd_runner: Callable[[DesignResult, Path, dict[str, Any]], dict[str, Any] | None] | None = None,
+        fdtd_config: dict[str, Any] | None = None,
         backend: str = "auto",
     ):
         self.library = library if isinstance(library, PillarLibrary) else PillarLibrary.from_csv(library)
@@ -91,6 +95,9 @@ class PhaseGridDesigner:
         self.should_plot_propagation = plot_propagation
         self.propagation_z = propagation_z
         self.propagation_size = propagation_size
+        self.run_fdtd = run_fdtd
+        self.fdtd_runner = fdtd_runner
+        self.fdtd_config = dict(fdtd_config or {})
         self.backend = backend
 
     def run(self, out_dir: str | Path | None = None) -> DesignResult:
@@ -117,6 +124,15 @@ class PhaseGridDesigner:
             z = self.propagation_z or self.phase_params.get("focal_length", self.aperture_radius * 2.0)
             wavelength = self.phase_params.get("wavelength", 1.0)
             result.files["propagation"] = plot_propagation(out_dir / "propagation.svg", sites, self.aperture_radius, wavelength, z, self.propagation_size)
+        if self.run_fdtd:
+            if self.fdtd_runner is None:
+                raise ValueError("run_fdtd=True requires fdtd_runner")
+            fdtd_dir = out_dir / "fdtd"
+            fdtd_dir.mkdir(parents=True, exist_ok=True)
+            fdtd_output = self.fdtd_runner(result, fdtd_dir, dict(self.fdtd_config)) or {}
+            result.summary["fdtd_status"] = str(fdtd_output.get("status", "completed"))
+            result.files["fdtd_summary"] = write_fdtd_summary(fdtd_dir / "summary.json", fdtd_output)
+            summary_path.write_text(json.dumps(result.summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return result
 
     def _select_sites(
@@ -180,3 +196,7 @@ def make_grid(aperture_radius: float, pitch: float, shape: str) -> list[tuple[fl
             points.append((x, y))
     return points
 
+
+def write_fdtd_summary(path: Path, output: dict[str, Any]) -> Path:
+    path.write_text(json.dumps(output, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    return path
