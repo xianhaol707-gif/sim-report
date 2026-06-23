@@ -3,14 +3,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sim-report"
-version = "0.1.0"
-description = "Generate charts, summary.md, and parameter tables from simulation results folders."
+name = "meep-report"
+version = "0.2.0"
+description = "Generate Markdown reports, figures, and parameter tables from Meep/FDTD simulation results."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "sim-report contributors" }]
-keywords = ["simulation", "report", "charts", "markdown"]
+authors = [{ name = "meep-report contributors" }]
+keywords = ["meep", "fdtd", "photonics", "metalens", "simulation", "report"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
@@ -19,10 +19,15 @@ classifiers = [
 ]
 
 [project.scripts]
-sim-report = "sim_report.cli:main"
+meep-report = "meep_report.cli:main"
+fdtd-report = "meep_report.cli:main"
+
+[project.optional-dependencies]
+hdf5 = ["h5py>=3.8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+

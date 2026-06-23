@@ -1,0 +1,14 @@
+{
+  "simulation": {
+    "resolution": 50,
+    "cell_um": [16, 16, 8],
+    "wavelength_um": 0.532
+  },
+  "metalens": {
+    "material": "TiO2",
+    "radius_um": 4.0,
+    "focal_length_um": 12.0,
+    "na": 0.316
+  }
+}
+

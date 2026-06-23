@@ -5,5 +5,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
-sim-report/
+report/
+meep-report/
+fdtd-report/
 
