@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from meep_report.report import ReportOptions, build_report
+from meep_report import ReportOptions, build_report
 
 
 def test_build_report_outputs_core_files(tmp_path: Path) -> None:
@@ -22,4 +22,3 @@ def test_build_report_outputs_core_files(tmp_path: Path) -> None:
     assert "# Demo" in summary
     assert "wavelength" in summary
     assert "warning: test" in summary
-

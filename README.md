@@ -56,6 +56,41 @@ Options:
 --strict               Fail when the input folder has no recognizable result files.
 ```
 
+## Python API
+
+Use it inside your own simulation workflow:
+
+```python
+from pathlib import Path
+
+from meep_report import ReportOptions, build_report
+
+result = build_report(
+    results_dir=Path("results/tio2_run_001"),
+    output_dir=Path("reports/tio2_run_001"),
+    options=ReportOptions(title="TiO2 run 001"),
+)
+
+print(result.summary_path)
+print(result.chart_paths)
+```
+
+For batch reporting:
+
+```python
+from pathlib import Path
+
+from meep_report import ReportOptions, build_report
+
+for results_dir in Path("results").iterdir():
+    if results_dir.is_dir():
+        build_report(
+            results_dir=results_dir,
+            output_dir=Path("reports") / results_dir.name,
+            options=ReportOptions(title=f"{results_dir.name} report"),
+        )
+```
+
 ## Why This Exists
 
 Meep/FDTD runs are easy to generate and hard to review later. This tool focuses on the boring but important parts:
@@ -75,4 +110,3 @@ PYTHONPATH=src python -m meep_report examples/basic/results --out /tmp/meep-repo
 ```
 
 Open `/tmp/meep-report-demo/summary.md` to inspect the generated report.
-
