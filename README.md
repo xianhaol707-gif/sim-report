@@ -116,7 +116,7 @@ designer = PhaseGridDesigner(
 designer.run("dualband_design")
 ```
 
-PB phase mode searches over rotation angles and writes `rotation_rad` / `rotation_deg` into the layout:
+PB/geometric phase can be activated as a design hyperparameter. When `use_pb=True`, the selector optimizes both the candidate and a rotation angle `theta`, using `dynamic_phase + 2 * spin * theta` by default:
 
 ```python
 from phasegrid import Channel, PhaseGridDesigner
@@ -133,12 +133,14 @@ designer = PhaseGridDesigner(
         )
     ],
     loss="pb_phase",
-    phase_mode="pb",      # dynamic / pb / hybrid
+    use_pb=True,
     rotation_steps=180,
     aperture_radius=4.0,
     pitch=0.35,
 )
 ```
+
+For explicit control, `phase_mode` can still be set to `dynamic`, `pb`, or `hybrid`.
 
 Lower-level curve fitting still works for simple single-band radius sweeps:
 
@@ -177,6 +179,7 @@ search = PhaseGridSearch(
     sweep={
         "phase": ["hyperbolic", "parabolic", "vortex"],
         "loss": ["phase_only", "phase_transmission", "high_transmission"],
+        "use_pb": [False, True],
         "pitch": [0.25, 0.30, 0.35],
         "aperture_radius": [4.0, 6.0],
         "focal_length": [8.0, 12.0],

@@ -70,3 +70,31 @@ def test_pb_phase_outputs_rotation(tmp_path) -> None:
     assert "rotation_deg" in layout
     assert any(site.candidate.rotation is not None for site in result.sites)
 
+
+def test_use_pb_enables_hybrid_rotation(tmp_path) -> None:
+    designer = PhaseGridDesigner(
+        library="examples/dualband_pb.csv",
+        channels=[
+            Channel(
+                name="532",
+                phase_col="phase_532",
+                transmission_col="T_532",
+                phase="hyperbolic",
+                phase_params={"wavelength": 0.532, "focal_length": 12.0},
+            )
+        ],
+        loss="pb_phase",
+        aperture_radius=0.5,
+        pitch=0.5,
+        use_pb=True,
+        rotation_steps=12,
+        plot_structure=False,
+        plot_phase=False,
+        plot_propagation=False,
+    )
+
+    result = designer.run(tmp_path)
+
+    assert result.summary["phase_mode"] == "hybrid"
+    assert result.summary["use_pb"] is True
+    assert any(site.candidate.rotation is not None for site in result.sites)

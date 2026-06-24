@@ -99,6 +99,7 @@ class PhaseGridDesigner:
         phase_params: dict[str, float] | None = None,
         channels: list[dict[str, Any] | Channel] | None = None,
         phase_mode: str = "dynamic",
+        use_pb: bool | None = None,
         rotation_steps: int = 180,
         pb_spin: int = 1,
         loss_params: dict[str, float] | None = None,
@@ -127,7 +128,8 @@ class PhaseGridDesigner:
         self.loss_params = {"phase_weight": 1.0, "transmission_weight": 0.2}
         self.loss_params.update(loss_params or {})
         self.channels = normalize_channels(channels, self.phase, self.phase_params)
-        self.phase_mode = phase_mode
+        self.use_pb = use_pb
+        self.phase_mode = resolve_phase_mode(phase_mode, use_pb)
         self.rotation_steps = rotation_steps
         self.pb_spin = pb_spin
         self.out_dir = Path(out_dir)
@@ -227,6 +229,7 @@ class PhaseGridDesigner:
             "phase": self.phase if isinstance(self.phase, str) else "custom",
             "loss": self.loss if isinstance(self.loss, str) else "custom",
             "phase_mode": self.phase_mode,
+            "use_pb": bool(self.phase_mode in {"pb", "hybrid"}),
             "channels": len(self.channels),
             "mean_abs_phase_error_rad": mean_abs_error,
             "mean_transmission": mean_transmission,
@@ -322,3 +325,13 @@ def rotation_grid(steps: int) -> list[float]:
     if steps <= 0:
         raise ValueError("rotation_steps must be positive")
     return [index * math.pi / steps for index in range(steps)]
+
+
+def resolve_phase_mode(phase_mode: str, use_pb: bool | None) -> str:
+    if use_pb is None:
+        resolved = phase_mode
+    else:
+        resolved = "hybrid" if use_pb else "dynamic"
+    if resolved not in {"dynamic", "pb", "hybrid"}:
+        raise ValueError("phase_mode must be 'dynamic', 'pb', or 'hybrid'")
+    return resolved

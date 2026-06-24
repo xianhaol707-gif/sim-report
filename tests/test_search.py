@@ -54,3 +54,35 @@ def test_search_accepts_multichannel_pb_settings(tmp_path) -> None:
 
     assert len(result.runs) == 1
     assert result.best.result.summary["phase_mode"] == "pb"
+
+
+def test_search_can_sweep_use_pb(tmp_path) -> None:
+    search = PhaseGridSearch(
+        library="examples/dualband_pb.csv",
+        sweep={
+            "use_pb": [False, True],
+            "loss": ["pb_phase"],
+            "pitch": [0.5],
+            "aperture_radius": [0.5],
+            "rotation_steps": [12],
+        },
+        fixed={
+            "channels": [
+                {
+                    "name": "532",
+                    "phase_col": "phase_532",
+                    "transmission_col": "T_532",
+                    "phase": "hyperbolic",
+                    "phase_params": {"wavelength": 0.532, "focal_length": 12.0},
+                }
+            ],
+            "plot_structure": False,
+            "plot_phase": False,
+            "plot_propagation": False,
+        },
+    )
+
+    result = search.run(tmp_path)
+
+    modes = {run.result.summary["phase_mode"] for run in result.runs}
+    assert modes == {"dynamic", "hybrid"}
