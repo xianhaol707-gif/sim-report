@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from .fit import PhaseFit
+from .library import PillarLibrary
 from .pipeline import PhaseGridPipeline
 from .search import PhaseGridSearch
 from .sweep import Sweep, parse_values
@@ -26,6 +27,15 @@ def main() -> int:
     fit_parser.add_argument("--radius-col", default="radius_um")
     fit_parser.add_argument("--phase-col", default="phase_rad")
     fit_parser.add_argument("--transmission-col", default="transmission")
+
+    report_parser = subparsers.add_parser("library-report", help="Summarize phase/transmission coverage for a library CSV.")
+    report_parser.add_argument("csv", type=Path, help="Library CSV.")
+    report_parser.add_argument("--phase-cols", default=None, help="Comma-separated phase columns. Defaults to inferred phase* columns.")
+    report_parser.add_argument("--transmission-cols", default=None, help="Comma-separated transmission columns. Defaults to inferred T*/transmission* columns.")
+    report_parser.add_argument("--required-cols", default=None, help="Comma-separated required columns to validate.")
+    report_parser.add_argument("--json", type=Path, default=None, help="Optional JSON report path.")
+    report_parser.add_argument("--markdown", type=Path, default=None, help="Optional Markdown report path.")
+    report_parser.add_argument("--strict", action="store_true", help="Fail if required columns are missing or phase coverage is below 2pi.")
 
     design_parser = subparsers.add_parser("design", help="Generate metalens layout CSV.")
     design_parser.add_argument("csv", type=Path, help="Sweep CSV.")
@@ -73,6 +83,31 @@ def main() -> int:
         fit = PhaseFit.from_csv(args.csv, radius=args.radius_col, phase=args.phase_col, transmission=args.transmission_col)
         fit.to_svg(args.out)
         print(f"Wrote {args.out}")
+        return 0
+    if args.mode == "library-report":
+        library = PillarLibrary.from_csv(args.csv)
+        phase_cols = parse_optional_strings(args.phase_cols)
+        transmission_cols = parse_optional_strings(args.transmission_cols)
+        required_cols = parse_optional_strings(args.required_cols)
+        report = (
+            library.validate(phase_cols, transmission_cols, required_cols)
+            if args.strict
+            else library.report(phase_cols, transmission_cols, required_cols)
+        )
+        print(f"Candidates: {report.candidates}")
+        print("Shapes: " + ", ".join(f"{key}={value}" for key, value in sorted(report.shapes.items())))
+        for column, stats in report.phase.items():
+            print(f"Phase {column}: span={stats.span:.6g} covers_2pi={stats.covers_2pi}")
+        for column, stats in report.transmission.items():
+            print(f"Transmission {column}: min={stats.minimum:.6g} max={stats.maximum:.6g} mean={stats.mean:.6g}")
+        for warning in report.warnings:
+            print(f"Warning: {warning}")
+        if args.json:
+            report.to_json(args.json)
+            print(f"Wrote {args.json}")
+        if args.markdown:
+            report.to_markdown(args.markdown)
+            print(f"Wrote {args.markdown}")
         return 0
     if args.mode == "design":
         fit = PhaseFit.from_csv(args.csv, radius=args.radius_col, phase=args.phase_col, transmission=args.transmission_col)
@@ -136,3 +171,7 @@ def main() -> int:
 
 def parse_strings(spec: str) -> list[str]:
     return [part.strip() for part in spec.split(",") if part.strip()]
+
+
+def parse_optional_strings(spec: str | None) -> list[str] | None:
+    return None if spec is None else parse_strings(spec)

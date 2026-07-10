@@ -1,12 +1,66 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from .fit import TAU, unwrap
+
+
+@dataclass(frozen=True)
+class ColumnStats:
+    column: str
+    count: int
+    minimum: float
+    maximum: float
+    mean: float
+    span: float
+    covers_2pi: bool = False
+
+
+@dataclass(frozen=True)
+class LibraryReport:
+    candidates: int
+    shapes: dict[str, int]
+    phase: dict[str, ColumnStats]
+    transmission: dict[str, ColumnStats]
+    missing_columns: list[str]
+    warnings: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        return data
+
+    def to_json(self, path: str | Path) -> Path:
+        path = Path(path)
+        path.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return path
+
+    def to_markdown(self, path: str | Path) -> Path:
+        path = Path(path)
+        lines = [
+            "# PhaseGrid Library Report",
+            "",
+            f"- Candidates: {self.candidates}",
+            f"- Shapes: {', '.join(f'{key}={value}' for key, value in sorted(self.shapes.items())) or 'none'}",
+            "",
+            "## Phase Columns",
+            "",
+        ]
+        append_stats_table(lines, self.phase, include_coverage=True)
+        lines.extend(["", "## Transmission Columns", ""])
+        append_stats_table(lines, self.transmission, include_coverage=False)
+        if self.missing_columns:
+            lines.extend(["", "## Missing Columns", ""])
+            lines.extend(f"- `{column}`" for column in self.missing_columns)
+        if self.warnings:
+            lines.extend(["", "## Warnings", ""])
+            lines.extend(f"- {warning}" for warning in self.warnings)
+        path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+        return path
 
 
 @dataclass(frozen=True)
@@ -139,6 +193,132 @@ class PillarLibrary:
     def transmissions(self) -> list[float]:
         return [candidate.transmission for candidate in self.candidates]
 
+    def report(
+        self,
+        phase_columns: list[str] | None = None,
+        transmission_columns: list[str] | None = None,
+        required_columns: list[str] | None = None,
+    ) -> LibraryReport:
+        phase_columns = phase_columns or infer_columns(self.candidates, prefixes=("phase",), fallback=["phase_rad"])
+        transmission_columns = transmission_columns or infer_columns(self.candidates, prefixes=("T", "transmission"), fallback=["transmission"])
+        required_columns = required_columns or []
+        missing_columns = [
+            column
+            for column in required_columns
+            if not any(candidate.value(column, None) not in {None, ""} for candidate in self.candidates)
+        ]
+        phase_stats = {column: stats_for_column(self.candidates, column, is_phase=True) for column in phase_columns}
+        transmission_stats = {column: stats_for_column(self.candidates, column, is_phase=False) for column in transmission_columns}
+        phase_stats = {key: value for key, value in phase_stats.items() if value is not None}
+        transmission_stats = {key: value for key, value in transmission_stats.items() if value is not None}
+        warnings = build_warnings(phase_stats, transmission_stats, missing_columns)
+        return LibraryReport(
+            candidates=len(self.candidates),
+            shapes=count_shapes(self.candidates),
+            phase=phase_stats,
+            transmission=transmission_stats,
+            missing_columns=missing_columns,
+            warnings=warnings,
+        )
+
+    def validate(
+        self,
+        phase_columns: list[str] | None = None,
+        transmission_columns: list[str] | None = None,
+        required_columns: list[str] | None = None,
+        require_2pi: bool = True,
+    ) -> LibraryReport:
+        report = self.report(phase_columns, transmission_columns, required_columns)
+        errors = list(report.missing_columns)
+        if require_2pi:
+            errors.extend(column for column, stats in report.phase.items() if not stats.covers_2pi)
+        if errors:
+            raise ValueError("Library validation failed: " + ", ".join(errors))
+        return report
+
 
 def phase_distance(left: float, right: float) -> float:
     return (left - right + math.pi) % TAU - math.pi
+
+
+def infer_columns(candidates: list[PillarCandidate], prefixes: tuple[str, ...], fallback: list[str]) -> list[str]:
+    columns = set()
+    for candidate in candidates:
+        for key in (candidate.params or {}):
+            lowered = key.lower()
+            if any(lowered == prefix.lower() or lowered.startswith(prefix.lower() + "_") for prefix in prefixes):
+                columns.add(key)
+    return sorted(columns or fallback)
+
+
+def stats_for_column(candidates: list[PillarCandidate], column: str, is_phase: bool) -> ColumnStats | None:
+    values = []
+    for candidate in candidates:
+        value = candidate.value(column, None)
+        if value in {None, ""}:
+            continue
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    if not values:
+        return None
+    sorted_values = sorted(values)
+    if is_phase:
+        unwrapped = unwrap(sorted_values)
+        span = max(unwrapped) - min(unwrapped)
+    else:
+        span = max(values) - min(values)
+    return ColumnStats(
+        column=column,
+        count=len(values),
+        minimum=min(values),
+        maximum=max(values),
+        mean=sum(values) / len(values),
+        span=span,
+        covers_2pi=span >= TAU * 0.95 if is_phase else False,
+    )
+
+
+def count_shapes(candidates: list[PillarCandidate]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for candidate in candidates:
+        counts[candidate.shape] = counts.get(candidate.shape, 0) + 1
+    return counts
+
+
+def build_warnings(
+    phase_stats: dict[str, ColumnStats],
+    transmission_stats: dict[str, ColumnStats],
+    missing_columns: list[str],
+) -> list[str]:
+    warnings = []
+    for column in missing_columns:
+        warnings.append(f"Required column {column!r} is missing or empty.")
+    for column, stats in phase_stats.items():
+        if not stats.covers_2pi:
+            warnings.append(f"Phase column {column!r} spans {stats.span:.3g} rad, below 0.95 * 2pi.")
+    for column, stats in transmission_stats.items():
+        if stats.minimum < 0.2:
+            warnings.append(f"Transmission column {column!r} has low minimum {stats.minimum:.3g}.")
+    return warnings
+
+
+def append_stats_table(lines: list[str], stats_map: dict[str, ColumnStats], include_coverage: bool) -> None:
+    if not stats_map:
+        lines.append("No numeric columns found.")
+        return
+    if include_coverage:
+        lines.append("| Column | Count | Min | Max | Mean | Span | Covers 2pi |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | --- |")
+        for stats in stats_map.values():
+            lines.append(
+                f"| {stats.column} | {stats.count} | {stats.minimum:.4g} | {stats.maximum:.4g} | {stats.mean:.4g} | {stats.span:.4g} | {stats.covers_2pi} |"
+            )
+    else:
+        lines.append("| Column | Count | Min | Max | Mean | Span |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+        for stats in stats_map.values():
+            lines.append(
+                f"| {stats.column} | {stats.count} | {stats.minimum:.4g} | {stats.maximum:.4g} | {stats.mean:.4g} | {stats.span:.4g} |"
+            )

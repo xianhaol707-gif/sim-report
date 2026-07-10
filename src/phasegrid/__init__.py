@@ -3,7 +3,7 @@
 from .channels import Channel
 from .designer import DesignResult, DesignSite, PhaseGridDesigner
 from .fit import PhaseFit, PhaseSample
-from .library import PillarCandidate, PillarLibrary
+from .library import ColumnStats, LibraryReport, PillarCandidate, PillarLibrary
 from .layout import LensLayout, LensPoint
 from .pipeline import PhaseGridPipeline, PipelineResult, arange, linspace
 from .search import PhaseGridSearch, SearchResult, SearchRun
@@ -25,6 +25,8 @@ __all__ = [
     "PhaseSample",
     "PillarCandidate",
     "PillarLibrary",
+    "ColumnStats",
+    "LibraryReport",
     "PipelineResult",
     "SearchResult",
     "SearchRun",

@@ -356,6 +356,31 @@ pipeline_out/
   pipeline_summary.json
 ```
 
+Check library quality before using it:
+
+```bash
+phasegrid library-report examples/dualband_pb.csv \
+  --phase-cols phase_532,phase_633 \
+  --transmission-cols T_532,T_633 \
+  --markdown library_report.md
+```
+
+Or from Python:
+
+```python
+from phasegrid import PillarLibrary
+
+library = PillarLibrary.from_csv("examples/dualband_pb.csv")
+report = library.report(
+    phase_columns=["phase_532", "phase_633"],
+    transmission_columns=["T_532", "T_633"],
+    required_columns=["shape", "width_um", "length_um"],
+)
+
+print(report.warnings)
+report.to_json("library_report.json")
+```
+
 ## Input Sweep Format
 
 At minimum, provide radius and phase columns:
