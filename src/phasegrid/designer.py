@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Any
 
-from .backend import select_indices
+from .backend import select_indices, select_multichannel_from_library
 from .channels import Channel, normalize_channels
 from .fit import TAU, wrap_phase
 from .library import PillarCandidate, PillarLibrary, phase_distance
@@ -241,13 +241,46 @@ class PhaseGridDesigner:
 
     def _select_multichannel_sites(self, coordinates: list[tuple[float, float]]) -> list[DesignSite]:
         channel_phase_fns = [(channel, resolve_phase(channel.phase)) for channel in self.channels]
+        target_rows = [
+            [
+                phase_fn(x, y, dict(channel.phase_params or {})) % TAU
+                for channel, phase_fn in channel_phase_fns
+            ]
+            for x, y in coordinates
+        ]
+        if self._can_use_multichannel_backend():
+            selections = select_multichannel_from_library(
+                target_rows=target_rows,
+                library=self.library,
+                channels=self.channels,
+                phase_weight=self.loss_params.get("phase_weight", 1.0),
+                phase_mode=self.phase_mode,
+                rotation_steps=self.rotation_steps,
+                pb_spin=self.pb_spin,
+                backend=self.backend,
+            )
+            sites = []
+            for (x, y), target_values, (candidate_index, rotation_index) in zip(coordinates, target_rows, selections):
+                candidate = self.library.candidates[candidate_index]
+                rotation = rotation_from_index(rotation_index, self.rotation_steps)
+                loss, errors = self._candidate_multichannel_loss(dict(zip((channel.name for channel in self.channels), target_values)), candidate, rotation)
+                sites.append(
+                    DesignSite(
+                        x=x,
+                        y=y,
+                        target_phase=target_values[0],
+                        candidate=candidate.with_rotation(rotation),
+                        loss=loss,
+                        channel_targets=dict(zip((channel.name for channel in self.channels), target_values)),
+                        channel_errors=errors,
+                    )
+                )
+            return sites
+
         rotations = rotation_grid(self.rotation_steps) if self.phase_mode in {"pb", "hybrid"} else [None]
         sites: list[DesignSite] = []
-        for x, y in coordinates:
-            targets = {
-                channel.name: phase_fn(x, y, dict(channel.phase_params or {})) % TAU
-                for channel, phase_fn in channel_phase_fns
-            }
+        for (x, y), target_values in zip(coordinates, target_rows):
+            targets = dict(zip((channel.name for channel in self.channels), target_values))
             best_candidate = self.library.candidates[0]
             best_loss = float("inf")
             best_errors: dict[str, float] = {}
@@ -298,6 +331,20 @@ class PhaseGridDesigner:
             errors[channel.name] = error
         return total, errors
 
+    def _can_use_multichannel_backend(self) -> bool:
+        return isinstance(self.loss, str) and self.loss.lower() in {
+            "phase_transmission",
+            "balanced",
+            "phase_only",
+            "phase",
+            "dualband",
+            "multiband",
+            "pb",
+            "pb_phase",
+            "pb_dualband",
+            "pb_multiband",
+        }
+
 
 def make_grid(aperture_radius: float, pitch: float, shape: str) -> list[tuple[float, float]]:
     if aperture_radius <= 0 or pitch <= 0:
@@ -325,6 +372,10 @@ def rotation_grid(steps: int) -> list[float]:
     if steps <= 0:
         raise ValueError("rotation_steps must be positive")
     return [index * math.pi / steps for index in range(steps)]
+
+
+def rotation_from_index(index: int | None, steps: int) -> float | None:
+    return None if index is None else index * math.pi / steps
 
 
 def resolve_phase_mode(phase_mode: str, use_pb: bool | None) -> str:

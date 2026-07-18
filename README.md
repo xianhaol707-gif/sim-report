@@ -167,7 +167,15 @@ layout.to_csv("metalens_layout.csv")
 fit.to_svg("phase_fit.svg")
 ```
 
-The built-in `phase_only` and `phase_transmission` losses use the optional C++ selector for simple single-channel selection when the extension is available. Multichannel and PB selection use the general Python loss engine.
+The built-in single-channel, multichannel, and PB losses use the optional C++ selector when the extension is available. Custom Python loss functions still use the general Python engine.
+
+Force a backend when you want reproducible debugging:
+
+```python
+designer = PhaseGridDesigner(..., backend="python")  # pure Python
+designer = PhaseGridDesigner(..., backend="cpp")     # require compiled extension
+designer = PhaseGridDesigner(..., backend="auto")    # C++ if available, otherwise Python
+```
 
 Compare many phase/loss/geometry settings:
 
