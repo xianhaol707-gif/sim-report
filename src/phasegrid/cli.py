@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .benchmark import compare_backends, write_benchmark_json
 from .fit import PhaseFit
 from .library import PillarLibrary
 from .pipeline import PhaseGridPipeline
@@ -72,6 +73,19 @@ def main() -> int:
     pipeline_parser.add_argument("--aperture-radius", default="1.0")
     pipeline_parser.add_argument("--focal-length", default="8,12")
     pipeline_parser.add_argument("--out", type=Path, default=Path("phasegrid_pipeline"))
+
+    benchmark_parser = subparsers.add_parser("benchmark", help="Benchmark multichannel/PB selector backends.")
+    benchmark_parser.add_argument("--sites", type=int, default=400)
+    benchmark_parser.add_argument("--candidates", type=int, default=300)
+    benchmark_parser.add_argument("--channels", type=int, default=2)
+    benchmark_parser.add_argument("--rotation-steps", type=int, default=90)
+    benchmark_parser.add_argument(
+        "--backend",
+        choices=["python", "cpp", "auto", "both"],
+        default="both",
+        help="Backend to benchmark. 'both' runs python, cpp, and auto.",
+    )
+    benchmark_parser.add_argument("--json", type=Path, default=None, help="Optional JSON output path.")
 
     args = parser.parse_args()
     if args.mode == "sweep":
@@ -164,6 +178,26 @@ def main() -> int:
         print(f"Library: {result.library_path}")
         print(f"Leaderboard: {result.search_result.leaderboard_path}")
         print(f"Best: {result.search_result.best.name} score={result.search_result.best.score:.6g}")
+        return 0
+    if args.mode == "benchmark":
+        backends = ["python", "cpp", "auto"] if args.backend == "both" else [args.backend]
+        results = compare_backends(
+            sites=args.sites,
+            candidates=args.candidates,
+            channels=args.channels,
+            rotation_steps=args.rotation_steps,
+            backends=backends,
+        )
+        for result in results:
+            rate = result.selections_per_second
+            status = result.status if result.status == "ok" else f"error: {result.error}"
+            print(
+                f"{result.backend}: {result.elapsed_seconds:.6f}s, "
+                f"{rate:.3g} loss terms/s, status={status}"
+            )
+        if args.json:
+            write_benchmark_json(args.json, results)
+            print(f"Wrote {args.json}")
         return 0
     parser.print_help()
     return 2

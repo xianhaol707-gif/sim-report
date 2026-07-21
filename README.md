@@ -177,6 +177,18 @@ designer = PhaseGridDesigner(..., backend="cpp")     # require compiled extensio
 designer = PhaseGridDesigner(..., backend="auto")    # C++ if available, otherwise Python
 ```
 
+Benchmark the selector on your machine:
+
+```bash
+phasegrid benchmark \
+  --sites 1000 \
+  --candidates 500 \
+  --channels 2 \
+  --rotation-steps 180 \
+  --backend both \
+  --json benchmark.json
+```
+
 Compare many phase/loss/geometry settings:
 
 ```python

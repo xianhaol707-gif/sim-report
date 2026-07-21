@@ -1,5 +1,6 @@
 """Phase-radius fitting and parameter sweep helpers for metalens design."""
 
+from .benchmark import BenchmarkResult, benchmark_selector, compare_backends
 from .channels import Channel
 from .designer import DesignResult, DesignSite, PhaseGridDesigner
 from .fit import PhaseFit, PhaseSample
@@ -32,9 +33,12 @@ __all__ = [
     "SearchRun",
     "Sweep",
     "CustomSolver",
+    "BenchmarkResult",
     "Channel",
     "MockSolver",
     "__version__",
     "arange",
+    "benchmark_selector",
+    "compare_backends",
     "linspace",
 ]
